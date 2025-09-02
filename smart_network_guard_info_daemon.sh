@@ -6,7 +6,7 @@
 
 PRIORITY_VAR="$1"
 
-# Targets
+# Targets ping
 DNS1=8.8.8.8
 DNS2=1.1.1.1
 HOST=google.com
