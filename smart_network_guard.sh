@@ -1,129 +1,71 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ========================================
-# Smart Network Guard - Non-Root All-in-One
-# Jalankan langsung, tanpa Termux:Widget
+# Mobile Guard Daemon Final - Non-Root
+# Verbose + toast + log + failover + stop file + persistent
 # ========================================
 
-# ---------- Pilih prioritas koneksi ----------
-echo "Pilih prioritas koneksi:"
-echo "1) Wi-Fi"
-echo "2) SIM1"
-echo "3) SIM2"
-read -p "Masukkan nomor (default 1): " PRIOR_CHOICE
+LOGFILE=/sdcard/mobile_guard_log.txt
+DELAY=10       # detik
+SIGNAL_MIN=10  # minimal signal % agar dianggap bagus
 
-case "$PRIOR_CHOICE" in
-    2) PRIORITY="sim1";;
-    3) PRIORITY="sim2";;
-    *) PRIORITY="wifi";;
-esac
-
-termux-toast "Smart Guard started, priority: $PRIORITY"
-
-# ---------- Set konfigurasi ----------
-DNS1=8.8.8.8
-DNS2=1.1.1.1
-HOST=google.com
-LOGFILE=/sdcard/network_log.txt
-DELAY=5
-WIFI_SSID="Siantar Lt 2"
-MAX_FAIL=3
-
-# ---------- Fungsi cek koneksi ----------
-check_connection() {
-    TARGETS="$DNS1 $DNS2 $HOST"
-    SUCCESS=1
-    for t in $TARGETS; do
-        ping -c 1 $t >/dev/null 2>&1
-        [ $? -ne 0 ] && SUCCESS=0
-    done
-    echo $SUCCESS
-}
-
-get_wifi_info() {
-    SSID=$(termux-wifi-connectioninfo | grep SSID | awk -F'"' '{print $2}')
-    SIGNAL=$(termux-wifi-connectioninfo | grep signal | awk -F: '{print $2}' | tr -d ' ')
-    RX=$(termux-wifi-connectioninfo | grep rx | awk -F: '{print $2}' | tr -d ' ')
-    TX=$(termux-wifi-connectioninfo | grep tx | awk -F: '{print $2}' | tr -d ' ')
-    echo "$SSID | Signal: $SIGNAL% | Rx: $RX Mbps | Tx: $TX Mbps"
-}
-
-# ---------- Loop utama + watchdog ----------
 while true; do
-    (
-        WIFI_FAIL=0
-        SIM1_FAIL=0
-        SIM2_FAIL=0
+    DATE_NOW=$(date +"%Y-%m-%d %H:%M:%S")
 
-        while true; do
-            WIFI_STATE=$(termux-wifi-connectioninfo | grep SSID | awk -F\" '{print $2}')
+    # ---------- Cek stop file ----------
+    if [ -f /sdcard/mobile_guard_stop ]; then
+        termux-toast "Mobile Guard stopped via stop file!"
+        echo "[$DATE_NOW] Mobile Guard stopped via stop file!" >> $LOGFILE
+        rm /sdcard/mobile_guard_stop
+        exit 0
+    fi
 
-            # Wi-Fi cek
-            if [ "$WIFI_STATE" == "$WIFI_SSID" ]; then
-                WIFI_OK=$(check_connection)
-                if [ $WIFI_OK -eq 1 ]; then
-                    WIFI_FAIL=0
-                    INFO=$(get_wifi_info)
-                    termux-toast "Wi-Fi OK: $INFO"
-                    echo "[$(date)] Wi-Fi OK: $INFO" >> $LOGFILE
-                else
-                    WIFI_FAIL=$((WIFI_FAIL+1))
-                    echo "[$(date)] Wi-Fi FAIL ping" >> $LOGFILE
-                fi
-            else
-                termux-toast "Wi-Fi drop!"
-                echo "[$(date)] Wi-Fi not connected" >> $LOGFILE
-                PRIORITY="sim1"
-            fi
+    # ---------- Cek SIM1 / SIM2 ----------
+    SIM_INFO=$(termux-telephony-deviceinfo)
+    SIM1_PRESENT=$(echo "$SIM_INFO" | grep -i sim1 | grep -o "true\|false")
+    SIM2_PRESENT=$(echo "$SIM_INFO" | grep -i sim2 | grep -o "true\|false")
 
-            # SIM1 cek
-            SIM1_OK=$(check_connection)
-            if [ $SIM1_OK -eq 1 ]; then
-                SIM1_FAIL=0
-                termux-toast "SIM1 OK"
-                echo "[$(date)] SIM1 OK" >> $LOGFILE
-            else
-                SIM1_FAIL=$((SIM1_FAIL+1))
-                termux-toast "SIM1 Down"
-                echo "[$(date)] SIM1 Down" >> $LOGFILE
-            fi
+    SIM1_TEXT="SIM1: $( [ "$SIM1_PRESENT" = "true" ] && echo "Present" || echo "Not present" )"
+    SIM2_TEXT="SIM2: $( [ "$SIM2_PRESENT" = "true" ] && echo "Present" || echo "Not present" )"
 
-            # SIM2 cek
-            SIM2_OK=$(check_connection)
-            if [ $SIM2_OK -eq 1 ]; then
-                SIM2_FAIL=0
-                termux-toast "SIM2 OK"
-                echo "[$(date)] SIM2 OK" >> $LOGFILE
-            else
-                SIM2_FAIL=$((SIM2_FAIL+1))
-                termux-toast "SIM2 Down"
-                echo "[$(date)] SIM2 Down" >> $LOGFILE
-            fi
+    # ---------- Ambil signal strength ----------
+    if [ "$SIM1_PRESENT" = "true" ]; then
+        SIM1_SIGNAL=$(termux-telephony-signalinfo --slot 0 | grep level | awk '{print $2}')
+    else
+        SIM1_SIGNAL=0
+    fi
 
-            # Prioritas koneksi
-            if [ "$PRIORITY" == "wifi" ] && [ "$WIFI_STATE" != "$WIFI_SSID" ]; then
-                PRIORITY="sim1"
-                termux-toast "Wi-Fi down, switch to SIM1"
-                echo "[$(date)] Priority switched to SIM1" >> $LOGFILE
-            elif [ "$PRIORITY" == "sim1" ] && [ $SIM1_OK -eq 0 ] && [ $SIM2_OK -eq 1 ]; then
-                PRIORITY="sim2"
-                termux-toast "SIM1 down, switch to SIM2"
-                echo "[$(date)] Priority switched to SIM2" >> $LOGFILE
-            elif [ "$PRIORITY" == "sim2" ] && [ $SIM1_OK -eq 1 ]; then
-                PRIORITY="sim1"
-                termux-toast "SIM2 down, switch back to SIM1"
-                echo "[$(date)] Priority switched to SIM1" >> $LOGFILE
-            elif [ "$PRIORITY" != "wifi" ] && [ "$WIFI_STATE" == "$WIFI_SSID" ]; then
-                PRIORITY="wifi"
-                termux-toast "Wi-Fi available, switch back to Wi-Fi"
-                echo "[$(date)] Priority switched to Wi-Fi" >> $LOGFILE
-            fi
+    if [ "$SIM2_PRESENT" = "true" ]; then
+        SIM2_SIGNAL=$(termux-telephony-signalinfo --slot 1 | grep level | awk '{print $2}')
+    else
+        SIM2_SIGNAL=0
+    fi
 
-            sleep $DELAY
-        done
-    )
+    # ---------- Pilih koneksi prioritas ----------
+    PRIORITY=""
+    if [ "$SIM1_PRESENT" = "true" ] && [ "$SIM1_SIGNAL" -ge "$SIGNAL_MIN" ]; then
+        PRIORITY="SIM1"
+    elif [ "$SIM2_PRESENT" = "true" ] && [ "$SIM2_SIGNAL" -ge "$SIGNAL_MIN" ]; then
+        PRIORITY="SIM2"
+    else
+        PRIORITY="None"
+    fi
 
-    # Jika daemon crash, restart otomatis
-    termux-toast "Daemon crashed, restarting..."
-    echo "[$(date)] Daemon crashed, auto-restart" >> $LOGFILE
-    sleep 2
+    # ---------- Cek koneksi internet ----------
+    INTERNET_OK=0
+    if [ "$PRIORITY" != "None" ]; then
+        ping -c 1 8.8.8.8 >/dev/null 2>&1 && INTERNET_OK=1
+    fi
+
+    INTERNET_TEXT=$( [ $INTERNET_OK -eq 1 ] && echo "Online" || echo "Offline" )
+
+    # ---------- Tampilkan info di terminal ----------
+    echo "[$DATE_NOW] $SIM1_TEXT | Signal: $SIM1_SIGNAL% | $SIM2_TEXT | Signal: $SIM2_SIGNAL% | Priority: $PRIORITY | Internet: $INTERNET_TEXT"
+
+    # ---------- Log ----------
+    echo "[$DATE_NOW] $SIM1_TEXT | Signal: $SIM1_SIGNAL% | $SIM2_TEXT | Signal: $SIM2_SIGNAL% | Priority: $PRIORITY | Internet: $INTERNET_TEXT" >> $LOGFILE
+
+    # ---------- Toast ----------
+    termux-toast "Priority: $PRIORITY | Internet: $INTERNET_TEXT"
+
+    sleep $DELAY
 done
