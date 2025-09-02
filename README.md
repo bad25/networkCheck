@@ -72,7 +72,7 @@ I build for project checking network on dekstop or mobie
 
 ## Persiapan
 
-1. Install **Termux** dari [Play Store](https://play.google.com/store/apps/details?id=com.termux&utm_source=chatgpt.com&pli=1) atau [F-Droid](https://f-droid.org/packages/com.termux.widget).
+1. Install **Termux** dari [Play Store](https://play.google.com/store/apps/details?id=com.termux&utm_source=chatgpt.com&pli=1) atau [F-Droid](https://f-droid.org/packages/com.termux.widget/).
 2. Install package `inetutils` untuk command `ping`:
 ```bash
 pkg update

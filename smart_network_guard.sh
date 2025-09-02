@@ -1,30 +1,34 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ========================================
-# Smart Network Guard Daemon - Advanced Non-Root
-# Dual SIM + Wi-Fi, background persistent, auto-retry
+# Smart Network Guard - Non-Root All-in-One
+# Jalankan langsung, tanpa Termux:Widget
 # ========================================
 
-PRIORITY_VAR="$1"   # di-passing dari main script
+# ---------- Pilih prioritas koneksi ----------
+echo "Pilih prioritas koneksi:"
+echo "1) Wi-Fi"
+echo "2) SIM1"
+echo "3) SIM2"
+read -p "Masukkan nomor (default 1): " PRIOR_CHOICE
 
-# Target ping
+case "$PRIOR_CHOICE" in
+    2) PRIORITY="sim1";;
+    3) PRIORITY="sim2";;
+    *) PRIORITY="wifi";;
+esac
+
+termux-toast "Smart Guard started, priority: $PRIORITY"
+
+# ---------- Set konfigurasi ----------
 DNS1=8.8.8.8
 DNS2=1.1.1.1
 HOST=google.com
-
-# Log file
 LOGFILE=/sdcard/network_log.txt
-
-# Delay antar cek (detik)
 DELAY=5
-
-# Nama Wi-Fi
 WIFI_SSID="Siantar Lt 2"
-
-# Max gagal sebelum failover
 MAX_FAIL=3
 
-# ----------------------------
-# Fungsi cek koneksi
+# ---------- Fungsi cek koneksi ----------
 check_connection() {
     TARGETS="$DNS1 $DNS2 $HOST"
     SUCCESS=1
@@ -35,7 +39,6 @@ check_connection() {
     echo $SUCCESS
 }
 
-# Fungsi info Wi-Fi
 get_wifi_info() {
     SSID=$(termux-wifi-connectioninfo | grep SSID | awk -F'"' '{print $2}')
     SIGNAL=$(termux-wifi-connectioninfo | grep signal | awk -F: '{print $2}' | tr -d ' ')
@@ -44,10 +47,8 @@ get_wifi_info() {
     echo "$SSID | Signal: $SIGNAL% | Rx: $RX Mbps | Tx: $TX Mbps"
 }
 
-# ----------------------------
-# Loop utama + watchdog
+# ---------- Loop utama + watchdog ----------
 while true; do
-    # Pastikan daemon tidak crash
     (
         WIFI_FAIL=0
         SIM1_FAIL=0
@@ -56,7 +57,7 @@ while true; do
         while true; do
             WIFI_STATE=$(termux-wifi-connectioninfo | grep SSID | awk -F\" '{print $2}')
 
-            # ----- Wi-Fi -----
+            # Wi-Fi cek
             if [ "$WIFI_STATE" == "$WIFI_SSID" ]; then
                 WIFI_OK=$(check_connection)
                 if [ $WIFI_OK -eq 1 ]; then
@@ -71,10 +72,10 @@ while true; do
             else
                 termux-toast "Wi-Fi drop!"
                 echo "[$(date)] Wi-Fi not connected" >> $LOGFILE
-                PRIORITY_VAR="sim1"
+                PRIORITY="sim1"
             fi
 
-            # ----- SIM1 -----
+            # SIM1 cek
             SIM1_OK=$(check_connection)
             if [ $SIM1_OK -eq 1 ]; then
                 SIM1_FAIL=0
@@ -86,7 +87,7 @@ while true; do
                 echo "[$(date)] SIM1 Down" >> $LOGFILE
             fi
 
-            # ----- SIM2 -----
+            # SIM2 cek
             SIM2_OK=$(check_connection)
             if [ $SIM2_OK -eq 1 ]; then
                 SIM2_FAIL=0
@@ -98,21 +99,21 @@ while true; do
                 echo "[$(date)] SIM2 Down" >> $LOGFILE
             fi
 
-            # ----- Prioritas koneksi -----
-            if [ "$PRIORITY_VAR" == "wifi" ] && [ "$WIFI_STATE" != "$WIFI_SSID" ]; then
-                PRIORITY_VAR="sim1"
+            # Prioritas koneksi
+            if [ "$PRIORITY" == "wifi" ] && [ "$WIFI_STATE" != "$WIFI_SSID" ]; then
+                PRIORITY="sim1"
                 termux-toast "Wi-Fi down, switch to SIM1"
                 echo "[$(date)] Priority switched to SIM1" >> $LOGFILE
-            elif [ "$PRIORITY_VAR" == "sim1" ] && [ $SIM1_OK -eq 0 ] && [ $SIM2_OK -eq 1 ]; then
-                PRIORITY_VAR="sim2"
+            elif [ "$PRIORITY" == "sim1" ] && [ $SIM1_OK -eq 0 ] && [ $SIM2_OK -eq 1 ]; then
+                PRIORITY="sim2"
                 termux-toast "SIM1 down, switch to SIM2"
                 echo "[$(date)] Priority switched to SIM2" >> $LOGFILE
-            elif [ "$PRIORITY_VAR" == "sim2" ] && [ $SIM1_OK -eq 1 ]; then
-                PRIORITY_VAR="sim1"
+            elif [ "$PRIORITY" == "sim2" ] && [ $SIM1_OK -eq 1 ]; then
+                PRIORITY="sim1"
                 termux-toast "SIM2 down, switch back to SIM1"
                 echo "[$(date)] Priority switched to SIM1" >> $LOGFILE
-            elif [ "$PRIORITY_VAR" != "wifi" ] && [ "$WIFI_STATE" == "$WIFI_SSID" ]; then
-                PRIORITY_VAR="wifi"
+            elif [ "$PRIORITY" != "wifi" ] && [ "$WIFI_STATE" == "$WIFI_SSID" ]; then
+                PRIORITY="wifi"
                 termux-toast "Wi-Fi available, switch back to Wi-Fi"
                 echo "[$(date)] Priority switched to Wi-Fi" >> $LOGFILE
             fi
